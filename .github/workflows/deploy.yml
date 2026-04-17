@@ -3,11 +3,10 @@ name: Build & Deploy to Azure
 on:
   push:
     branches: [main]
-  workflow_dispatch:  # allows manual trigger from GitHub UI
+  workflow_dispatch:
 
 env:
-  RESOURCE_GROUP: anshmittal
-  ACR_NAME: legalcocounselacr
+  ACR_LOGIN_SERVER: legalcocounselacr.azurecr.io
   API_APP_NAME: legal-cocounsel-api
   FRONTEND_APP_NAME: legal-cocounsel-frontend
 
@@ -16,64 +15,59 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ── 1. Checkout code ────────────────────────────────────────────────────
+      # ── 1. Checkout ──────────────────────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ── 2. Log in to Azure ──────────────────────────────────────────────────
-      - name: Log in to Azure
-        uses: azure/login@v2
+      # ── 2. Log in to ACR ─────────────────────────────────────────────────────
+      - name: Log in to Azure Container Registry
+        uses: docker/login-action@v3
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          registry: ${{ env.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
 
-      # ── 3. Build & push API image via ACR Tasks ─────────────────────────────
-      # ACR builds happen in Azure (no Docker needed on the runner).
-      # Kaggle creds are build-time args — not stored in the final image.
-      # If data/chroma_db/ is committed, the Dockerfile skips re-ingestion.
+      # ── 3. Build & push API image ────────────────────────────────────────────
       - name: Build and push API image
-        run: |
-          az acr build \
-            --registry ${{ env.ACR_NAME }} \
-            --image legal-cocounsel-api:${{ github.sha }} \
-            --image legal-cocounsel-api:latest \
-            --file Dockerfile \
-            --build-arg KAGGLE_USERNAME=${{ secrets.KAGGLE_USERNAME }} \
-            --build-arg KAGGLE_KEY=${{ secrets.KAGGLE_KEY }} \
-            .
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            ${{ env.ACR_LOGIN_SERVER }}/legal-cocounsel-api:latest
+            ${{ env.ACR_LOGIN_SERVER }}/legal-cocounsel-api:${{ github.sha }}
+          build-args: |
+            KAGGLE_USERNAME=${{ secrets.KAGGLE_USERNAME }}
+            KAGGLE_KEY=${{ secrets.KAGGLE_KEY }}
 
       # ── 4. Build & push Frontend image ──────────────────────────────────────
       - name: Build and push Frontend image
-        run: |
-          az acr build \
-            --registry ${{ env.ACR_NAME }} \
-            --image legal-cocounsel-frontend:${{ github.sha }} \
-            --image legal-cocounsel-frontend:latest \
-            --file Dockerfile.frontend \
-            .
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.frontend
+          push: true
+          tags: |
+            ${{ env.ACR_LOGIN_SERVER }}/legal-cocounsel-frontend:latest
+            ${{ env.ACR_LOGIN_SERVER }}/legal-cocounsel-frontend:${{ github.sha }}
 
-      # ── 5. Restart App Service to pull the new :latest image ─────────────────
+      # ── 5. Restart API App Service to pull new image ─────────────────────────
       - name: Restart API App Service
-        run: |
-          az webapp restart \
-            --name ${{ env.API_APP_NAME }} \
-            --resource-group ${{ env.RESOURCE_GROUP }}
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.API_APP_NAME }}
+          publish-profile: ${{ secrets.AZURE_API_PUBLISH_PROFILE }}
 
+      # ── 6. Restart Frontend App Service ──────────────────────────────────────
       - name: Restart Frontend App Service
-        run: |
-          az webapp restart \
-            --name ${{ env.FRONTEND_APP_NAME }} \
-            --resource-group ${{ env.RESOURCE_GROUP }}
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.FRONTEND_APP_NAME }}
+          publish-profile: ${{ secrets.AZURE_FRONTEND_PUBLISH_PROFILE }}
 
-      # ── 6. Print deployed URLs ────────────────────────────────────────────────
-      - name: Print deployment URLs
+      # ── 7. Print URLs ─────────────────────────────────────────────────────────
+      - name: Deployment complete
         run: |
-          API_URL=$(az webapp show \
-            --name ${{ env.API_APP_NAME }} \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --query defaultHostName -o tsv)
-          FRONTEND_URL=$(az webapp show \
-            --name ${{ env.FRONTEND_APP_NAME }} \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --query defaultHostName -o tsv)
-          echo "✅ API:      https://$API_URL"
-          echo "✅ Frontend: https://$FRONTEND_URL"
+          echo "✅ API:      https://legal-cocounsel-api.azurewebsites.net"
+          echo "✅ Frontend: https://legal-cocounsel-frontend.azurewebsites.net"
