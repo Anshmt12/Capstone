@@ -1,184 +1,297 @@
 # AI Legal Co-Counsel
 
-AI-powered assistant for Indian lawyers featuring RAG-based legal research, Text-to-SQL case analytics, and a multi-agent debate system — all using free LLM APIs.
+An AI-powered legal assistant for Indian lawyers featuring RAG-based legal research, a multi-agent debate system, Text-to-SQL case analytics, document OCR ingestion, and safety guardrails — deployed on Azure with a full CI/CD pipeline.
+
+## Live Demo
+
+| Service | URL |
+|---------|-----|
+| Frontend | https://legal-cocounsel-frontend.azurewebsites.net |
+| API | https://legal-cocounsel-api.azurewebsites.net |
+| API Docs | https://legal-cocounsel-api.azurewebsites.net/docs |
+
+---
 
 ## Architecture
 
 ```
-┌─────────────┐     ┌──────────────────────────────────────────────┐
-│   Client     │────▶│  FastAPI Backend (port 8000)                 │
-└─────────────┘     │                                              │
-                    │  POST /api/query ──────▶ LangGraph Orchestrator
-                    │    ├── RAG Agent (LangChain + pgvector)      │
-                    │    ├── Advocate Agent (strengths)             │
-                    │    ├── Critic Agent (weaknesses)              │
-                    │    └── Mediator Agent (strategic brief)       │
-                    │                                              │
-                    │  POST /api/sql/query ──▶ Text-to-SQL Agent   │
-                    │    └── SQLite (220 synthetic Indian cases)    │
-                    │                                              │
-                    │  POST /api/documents/upload ──▶ Doc Parser   │
-                    │    └── PyMuPDF + Tesseract OCR → pgvector    │
-                    │                                              │
-                    │  POST /api/cases/import ──▶ Excel/CSV Import │
-                    └──────────────────────────────────────────────┘
-                              │                    │
-                    ┌─────────┘                    └──────────┐
-                    ▼                                         ▼
-              PostgreSQL + pgvector                    SQLite (cases)
-              (Indian Constitution,                   (220 synthetic
-               SC judgments, uploads)                   legal cases)
+┌─────────────────────────────────────────────────────────────────┐
+│   Streamlit Frontend (Port 8501)                                │
+│   4 Tabs: Legal Research | Documents | Case Analytics | Guardrail Test │
+└──────────────────────┬──────────────────────────────────────────┘
+                       │ HTTP
+┌──────────────────────▼──────────────────────────────────────────┐
+│   FastAPI Backend (Port 8000)                                   │
+│                                                                 │
+│  ┌─────────────────┐   ┌──────────────────────────────────┐    │
+│  │ Input Guardrails│   │ LangGraph Orchestrator           │    │
+│  │ - Jailbreak     │   │                                  │    │
+│  │ - PII Redaction │──▶│  RAG Agent                       │    │
+│  │ - Harmful       │   │    └── ChromaDB (12,170 chunks)  │    │
+│  │ - Off-topic     │   │  Advocate Agent (strengths)      │    │
+│  └─────────────────┘   │  Critic Agent (weaknesses)       │    │
+│                        │  Mediator Agent (strategy)       │    │
+│  ┌─────────────────┐   └──────────────────────────────────┘    │
+│  │ Output Guardrails│                                          │
+│  │ - Citation check│   ┌──────────────────────────────────┐    │
+│  │ - Hallucination │   │ SQL Agent (Text-to-SQL)          │    │
+│  │ - Harmful advice│   │  └── SQLite (220 cases)          │    │
+│  │ - Disclaimer    │   └──────────────────────────────────┘    │
+│  └─────────────────┘                                           │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+              ┌──────────────┴──────────────┐
+              ▼                             ▼
+        ChromaDB                        SQLite
+   (Indian Constitution,            (220 synthetic
+    IPC, CrPC — 12,170 chunks)       Indian cases)
 ```
+
+---
+
+## Features
+
+### 1. Legal Research (RAG)
+- Semantic search over 12,170 legal Q&A chunks from the Indian Constitution, IPC, and CrPC
+- Sourced from Kaggle dataset (`akshatgupta7/llm-fine-tuning-dataset-of-indian-legal-texts`)
+- 10 additional landmark Supreme Court judgment chunks (Kesavananda Bharati, Maneka Gandhi, Puttaswamy, etc.)
+- Retriever filters out non-Indian sources at query time
+- Answers grounded in retrieved context with proper legal citations
+
+### 2. Multi-Agent Debate (LangGraph)
+A 5-step LangGraph state machine:
+```
+RAG Research → Advocate (Round 1) → Critic → Advocate (Rebuttal) → Mediator
+```
+- **RAG Agent**: retrieves relevant Indian law context
+- **Advocate**: builds strongest arguments for the client
+- **Critic**: challenges weaknesses, opposing arguments
+- **Advocate (Round 2)**: rebuts the Critic
+- **Mediator**: synthesizes a strategic legal brief
+
+### 3. Case Analytics (Text-to-SQL)
+- Natural language → SQL queries over 220 synthetic Indian cases
+- Covers: courts, judges, case types, articles invoked, damages, win/loss status
+- Example: *"How many Article 21 cases did we win in the Supreme Court?"*
+
+### 4. Document Upload & OCR
+- Upload PDFs, images (PNG, JPG), or text files
+- PyMuPDF extracts text from digital PDFs
+- Tesseract OCR handles scanned documents and images
+- Chunks added to ChromaDB for immediate semantic search
+
+### 5. Guardrails
+**Input Guardrails:**
+- Jailbreak / prompt injection detection
+- Indian PII detection & redaction (Aadhaar, PAN, phone)
+- Off-topic query blocking
+- Harmful legal request blocking (evidence tampering, bribery)
+- Query length validation
+
+**Output Guardrails:**
+- Hallucination indicator detection
+- Citation format validation (SCC, AIR, SCR)
+- Harmful advice detection
+- Foreign law misuse detection
+- Auto-appends legal disclaimer
+- Returns confidence score (0.0–1.0)
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Frontend | Streamlit |
+| Backend | FastAPI + Uvicorn |
+| Multi-Agent | LangGraph |
+| RAG | LangChain + ChromaDB |
+| LLM | Groq (`llama-3.1-8b-instant`) / OpenRouter / HuggingFace |
+| Embeddings | `BAAI/bge-base-en-v1.5` (local, no API needed) |
+| Document Parsing | PyMuPDF + Tesseract OCR |
+| Case Database | SQLite |
+| Vector Database | ChromaDB (local persistence) |
+| Dataset | Kaggle: `akshatgupta7/llm-fine-tuning-dataset-of-indian-legal-texts` |
+| Containerization | Docker |
+| Registry | Azure Container Registry (ACR) |
+| Hosting | Azure App Service |
+| CI/CD | GitHub Actions |
+
+---
 
 ## Quick Start
 
-### 1. Clone and configure
+### Run Locally
 
 ```bash
+# 1. Clone and set up environment
+git clone https://github.com/Anshmt12/Capstone.git
+cd Capstone
+python -m venv venv
+venv\Scripts\activate  # Windows
+pip install -r requirements.txt
+
+# 2. Configure API keys
 cp .env.example .env
-# Edit .env — add at least one API key (Groq recommended)
+# Edit .env — add GROQ_API_KEY (get free at console.groq.com)
+
+# 3. Seed database and ingest legal documents
+python scripts/seed_database.py
+python scripts/ingest_constitution.py  # downloads Kaggle dataset
+
+# 4. Run the API
+uvicorn app.main:app --reload
+
+# 5. Run the frontend (separate terminal)
+streamlit run frontend/app.py
 ```
 
-### 2. Run with Docker (recommended)
+### Run with Docker
 
 ```bash
 docker-compose up --build
 ```
 
-This starts PostgreSQL with pgvector, seeds the database with 220 cases, ingests 50 Indian legal document chunks, and launches the API on port 8000.
-
-### 3. Run without Docker
-
-```bash
-# Install PostgreSQL with pgvector extension first
-pip install -r requirements.txt
-python scripts/seed_database.py
-python scripts/ingest_constitution.py
-uvicorn app.main:app --reload
-```
+---
 
 ## API Endpoints
 
-### `POST /api/query` — Legal Research + Debate
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/query` | POST | Legal research + optional multi-agent debate |
+| `/api/sql/query` | POST | Natural language case analytics |
+| `/api/documents/upload` | POST | Upload PDF/image for OCR + ingestion |
+| `/api/cases/import` | POST | Import cases from Excel/CSV |
+| `/api/health` | GET | Health check |
+
+### Example Requests
 
 ```bash
-curl -X POST http://localhost:8000/api/query \
+# Legal research with debate
+curl -X POST https://legal-cocounsel-api.azurewebsites.net/api/query \
   -H "Content-Type: application/json" \
   -d '{"query": "Can Article 21 be invoked for environmental protection?", "run_debate": true}'
-```
 
-Response includes: RAG research, Advocate arguments (Round 1), Critic challenges, Advocate rebuttal (Round 2), and Mediator's strategic brief.
-
-Set `"run_debate": false` for RAG-only response.
-
-### `POST /api/sql/query` — Case Analytics
-
-```bash
-curl -X POST http://localhost:8000/api/sql/query \
+# Case analytics
+curl -X POST https://legal-cocounsel-api.azurewebsites.net/api/sql/query \
   -H "Content-Type: application/json" \
-  -d '{"question": "How many Article 21 cases did we win?"}'
-```
+  -d '{"question": "How many cases are pending in the Supreme Court?"}'
 
-### `POST /api/documents/upload` — Upload Legal Documents
-
-```bash
-curl -X POST http://localhost:8000/api/documents/upload \
+# Upload a document
+curl -X POST https://legal-cocounsel-api.azurewebsites.net/api/documents/upload \
   -F "file=@judgment.pdf"
 ```
 
-### `POST /api/cases/import` — Import Cases from Excel/CSV
+---
 
-```bash
-curl -X POST http://localhost:8000/api/cases/import \
-  -F "file=@cases.xlsx" \
-  -F 'column_mapping={"Case No": "case_number", "Title": "case_title", "Court": "court"}'
+## Dataset
+
+The knowledge base is built from the Kaggle dataset `akshatgupta7/llm-fine-tuning-dataset-of-indian-legal-texts`:
+
+| File | Entries | Loaded | Source |
+|------|---------|--------|--------|
+| `constitution_qa.json` | 4,082 | 3,390 | Indian Constitution |
+| `ipc_qa.json` | 2,267 | 2,019 | Indian Penal Code |
+| `crpc_qa.json` | 8,194 | 6,751 | Code of Criminal Procedure |
+| Landmark judgments | 10 | 10 | Hardcoded SC judgments |
+| **Total** | **14,553** | **12,170** | |
+
+Short/stub answers are filtered out (min 30 characters). Each Q&A pair is stored as `Q: ...\nA: ...` for optimal semantic search.
+
+---
+
+## CI/CD Pipeline
+
+Every push to `main` automatically:
+
+```
+git push → GitHub Actions triggers
+  → Docker build (ubuntu-latest runner)
+  → Push API image to ACR (:latest + :git-sha)
+  → Push Frontend image to ACR
+  → Azure App Service restarts with new image
+  → Both apps live within ~10 minutes
 ```
 
-## Example Queries
+### Required GitHub Secrets
 
-**Legal Research:**
-- "What are the fundamental rights under Part III of the Indian Constitution?"
-- "Explain the basic structure doctrine and its significance"
-- "What protections exist for arrested persons under Indian law?"
+| Secret | Description |
+|--------|-------------|
+| `ACR_USERNAME` | Azure Container Registry username |
+| `ACR_PASSWORD` | Azure Container Registry password |
+| `KAGGLE_USERNAME` | Kaggle username (for dataset download at build time) |
+| `KAGGLE_KEY` | Kaggle API key |
+| `AZURE_API_PUBLISH_PROFILE` | App Service publish profile XML (API) |
+| `AZURE_FRONTEND_PUBLISH_PROFILE` | App Service publish profile XML (Frontend) |
 
-**Case Analytics (Text-to-SQL):**
-- "How many cases are pending in the Supreme Court?"
-- "What is our win rate for constitutional cases?"
-- "Show top 5 cases by damages awarded"
-- "Which judge has the most cases assigned?"
-
-**Multi-Agent Debate:**
-- "My client is challenging a property acquisition under Article 300A. The state claims eminent domain but compensation offered is below market value. What are our options?"
-
-## Tech Stack
-
-| Component | Technology |
-|-----------|-----------|
-| LLM | Groq / OpenRouter / HuggingFace (free tiers) |
-| Embeddings | BAAI/bge-base-en-v1.5 (local) |
-| RAG | LangChain |
-| Multi-Agent | LangGraph |
-| Text-to-SQL | LangChain |
-| Backend | FastAPI |
-| Vector DB | PostgreSQL + pgvector |
-| Case DB | SQLite |
-| Doc Parsing | PyMuPDF + Tesseract OCR |
-| External Integration | MCP Server |
-| Deployment | Docker + docker-compose |
-
-## MCP Server
-
-The MCP server exposes three tools for external integration:
-
-- `legal_research` — RAG-based legal search
-- `case_analytics` — Natural language SQL queries
-- `legal_debate` — Full multi-agent debate
-
-Run standalone: `python -m app.mcp.server`
+---
 
 ## Project Structure
 
 ```
 legal-cocounsel/
 ├── app/
-│   ├── main.py                 # FastAPI application
-│   ├── config.py               # Settings and API keys
+│   ├── main.py                  # FastAPI app + all endpoints
+│   ├── config.py                # Settings and env vars
 │   ├── agents/
-│   │   ├── orchestrator.py     # LangGraph state machine
-│   │   ├── llm_provider.py     # LLM abstraction (Groq/OpenRouter/HF)
-│   │   ├── rag_agent.py        # RAG with LangChain
-│   │   ├── advocate_agent.py   # Finds strengths
-│   │   ├── critic_agent.py     # Finds weaknesses
-│   │   └── mediator_agent.py   # Synthesizes debate
+│   │   ├── orchestrator.py      # LangGraph debate state machine
+│   │   ├── llm_provider.py      # Groq / OpenRouter / HuggingFace
+│   │   ├── rag_agent.py         # RAG with LangChain
+│   │   ├── advocate_agent.py    # Finds strengths
+│   │   ├── critic_agent.py      # Finds weaknesses
+│   │   └── mediator_agent.py    # Synthesizes debate
 │   ├── rag/
-│   │   ├── embeddings.py       # HuggingFace embeddings
-│   │   ├── vector_store.py     # pgvector operations
-│   │   └── retriever.py        # LangChain retriever
+│   │   ├── embeddings.py        # BAAI/bge-base-en-v1.5
+│   │   ├── vector_store.py      # ChromaDB operations
+│   │   └── retriever.py         # Indian-law-only retriever
+│   ├── guardrails/
+│   │   ├── input_guardrail.py   # Query validation
+│   │   ├── output_guardrail.py  # Response validation
+│   │   └── retrieval_guardrail.py
 │   ├── parsers/
-│   │   └── document_parser.py  # PDF + OCR parsing
+│   │   └── document_parser.py  # PyMuPDF + Tesseract OCR
 │   ├── sql/
-│   │   ├── database.py         # SQLite setup
-│   │   └── text_to_sql.py      # NL to SQL
+│   │   ├── database.py          # SQLite setup
+│   │   └── text_to_sql.py       # NL → SQL
 │   └── mcp/
-│       └── server.py           # MCP tools
+│       └── server.py            # MCP server (external integration)
+├── frontend/
+│   └── app.py                   # Streamlit UI
 ├── data/
 │   ├── constitution/
-│   │   └── indian_law_chunks.py
-│   └── seed_cases.py           # 220 synthetic cases
+│   │   └── indian_law_chunks.py # Reference chunks (not ingested)
+│   ├── seed_cases.py            # 220 synthetic case generator
+│   ├── chroma_db/               # ChromaDB persistence
+│   └── cases.db                 # SQLite case database
 ├── scripts/
-│   ├── ingest_constitution.py
-│   └── seed_database.py
-├── Dockerfile
-├── docker-compose.yml
-├── requirements.txt
-└── README.md
+│   ├── ingest_constitution.py   # Downloads Kaggle dataset → ChromaDB
+│   └── seed_database.py         # Seeds SQLite with 220 cases
+├── .github/
+│   └── workflows/
+│       └── deploy.yml           # CI/CD pipeline
+├── Dockerfile                   # API image (includes Tesseract via apt)
+├── Dockerfile.frontend          # Streamlit image
+├── docker-compose.yml           # Local development
+└── requirements.txt
 ```
+
+---
 
 ## Free API Keys
 
-1. **Groq** (recommended): https://console.groq.com → Create API key
-2. **OpenRouter**: https://openrouter.ai/keys → Free models available
-3. **HuggingFace**: https://huggingface.co/settings/tokens → Access token
+| Provider | URL | Model Used |
+|----------|-----|-----------|
+| Groq (recommended) | console.groq.com | `llama-3.1-8b-instant` |
+| OpenRouter | openrouter.ai/keys | `meta-llama/llama-3.1-8b-instruct:free` |
+| HuggingFace | huggingface.co/settings/tokens | `Meta-Llama-3.1-8B-Instruct` |
+
+---
+
+## Disclaimer
+
+This tool provides AI-generated legal information based on Indian law for research purposes only. It does not constitute legal advice. Always consult a qualified advocate for specific legal matters.
+
+---
 
 ## License
 
