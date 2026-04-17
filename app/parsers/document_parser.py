@@ -1,5 +1,7 @@
 """Document parser for PDFs and scanned images using PyMuPDF + Tesseract."""
 import logging
+import os
+import sys
 import fitz  # PyMuPDF
 import pytesseract
 from PIL import Image
@@ -9,6 +11,12 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+# On Windows, point pytesseract to the default Tesseract install location
+if sys.platform == "win32":
+    tesseract_path = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+    if os.path.exists(tesseract_path):
+        pytesseract.pytesseract.tesseract_cmd = tesseract_path
 
 
 class DocumentParser:
