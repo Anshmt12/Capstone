@@ -1,0 +1,23 @@
+# Environment
+.env
+*.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.venv/
+venv/
+capstone/
+
+# Uploads (user data, not source)
+data/uploads/
+
+# IDE
+.vscode/
+.idea/
+
+# Claude
+.claude/
