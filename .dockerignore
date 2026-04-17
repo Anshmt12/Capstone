@@ -1,0 +1,12 @@
+capstone/
+.git/
+.env
+*.pyc
+__pycache__/
+.venv/
+venv/
+*.egg-info/
+.dockerignore
+deploy-azure.sh
+README.md
+docker-compose.yml
