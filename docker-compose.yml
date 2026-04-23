@@ -1,39 +1,24 @@
 
 services:
-  db:
-    image: pgvector/pgvector:pg16
-    environment:
-      POSTGRES_DB: legal_cocounsel
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    ports:
-      - "5433:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
   api:
     build: .
     ports:
       - "8000:8000"
     env_file: .env
     environment:
-      POSTGRES_HOST: db
-      POSTGRES_PORT: 5432
-      POSTGRES_DB: legal_cocounsel
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
       SQLITE_DB: /app/data/cases.db
-    depends_on:
-      db:
-        condition: service_healthy
+      CHROMA_PERSIST_DIR: /app/data/chroma_db
     volumes:
       - ./data:/app/data
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
 
-volumes:
-  pgdata:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "8501:8501"
+    environment:
+      API_BASE_URL: http://api:8000/api
+    depends_on:
+      - api

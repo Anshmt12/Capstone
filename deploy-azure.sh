@@ -10,10 +10,10 @@ set -euo pipefail
 RESOURCE_GROUP="legal-cocounsel-rg"
 LOCATION="eastus"
 ACR_NAME="legalcocounselacr"          # must be globally unique, lowercase, 5-50 chars
-POSTGRES_SERVER="legal-cocounsel-pg"  # must be globally unique
-POSTGRES_DB="legal_cocounsel"
-POSTGRES_USER="pgadmin"
-POSTGRES_PASSWORD="Change_me_123!"    # change before running
+# POSTGRES_SERVER="legal-cocounsel-pg"  # must be globally unique
+# POSTGRES_DB="legal_cocounsel"
+# POSTGRES_USER="pgadmin"
+# POSTGRES_PASSWORD="Change_me_123!"    # change before running
 ENV_NAME="legal-cocounsel-env"
 API_APP_NAME="legal-cocounsel-api"
 FRONTEND_APP_NAME="legal-cocounsel-frontend"
@@ -55,33 +55,33 @@ az acr build \
   .
 
 # ─── PostgreSQL Flexible Server ──────────────────────────────────────────────
-echo "==> Creating PostgreSQL Flexible Server: $POSTGRES_SERVER"
-az postgres flexible-server create \
-  --resource-group "$RESOURCE_GROUP" \
-  --name "$POSTGRES_SERVER" \
-  --location "$LOCATION" \
-  --admin-user "$POSTGRES_USER" \
-  --admin-password "$POSTGRES_PASSWORD" \
-  --sku-name Standard_B1ms \
-  --tier Burstable \
-  --storage-size 32 \
-  --version 16 \
-  --public-access 0.0.0.0
+# echo "==> Creating PostgreSQL Flexible Server: $POSTGRES_SERVER"
+# az postgres flexible-server create \
+#   --resource-group "$RESOURCE_GROUP" \
+#   --name "$POSTGRES_SERVER" \
+#   --location "$LOCATION" \
+#   --admin-user "$POSTGRES_USER" \
+#   --admin-password "$POSTGRES_PASSWORD" \
+#   --sku-name Standard_B1ms \
+#   --tier Burstable \
+#   --storage-size 32 \
+#   --version 16 \
+#   --public-access 0.0.0.0
 
-echo "==> Enabling pgvector extension..."
-az postgres flexible-server parameter set \
-  --resource-group "$RESOURCE_GROUP" \
-  --server-name "$POSTGRES_SERVER" \
-  --name azure.extensions \
-  --value vector
+# echo "==> Enabling pgvector extension..."
+# az postgres flexible-server parameter set \
+#   --resource-group "$RESOURCE_GROUP" \
+#   --server-name "$POSTGRES_SERVER" \
+#   --name azure.extensions \
+#   --value vector
 
-echo "==> Creating database: $POSTGRES_DB"
-az postgres flexible-server db create \
-  --resource-group "$RESOURCE_GROUP" \
-  --server-name "$POSTGRES_SERVER" \
-  --database-name "$POSTGRES_DB"
+# echo "==> Creating database: $POSTGRES_DB"
+# az postgres flexible-server db create \
+#   --resource-group "$RESOURCE_GROUP" \
+#   --server-name "$POSTGRES_SERVER" \
+#   --database-name "$POSTGRES_DB"
 
-POSTGRES_HOST="${POSTGRES_SERVER}.postgres.database.azure.com"
+# POSTGRES_HOST="${POSTGRES_SERVER}.postgres.database.azure.com"
 
 # ─── Container Apps Environment ──────────────────────────────────────────────
 echo "==> Creating Container Apps environment: $ENV_NAME"
@@ -110,12 +110,8 @@ az containerapp create \
   --cpu 1.0 \
   --memory 2.0Gi \
   --env-vars \
-    POSTGRES_HOST="$POSTGRES_HOST" \
-    POSTGRES_PORT="5432" \
-    POSTGRES_DB="$POSTGRES_DB" \
-    POSTGRES_USER="${POSTGRES_USER}@${POSTGRES_SERVER}" \
-    POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
-    SQLITE_DB="/app/data/cases.db"
+    SQLITE_DB="/app/data/cases.db" \
+    CHROMA_PERSIST_DIR="/app/data/chroma_db"
 
 API_URL=$(az containerapp show \
   --resource-group "$RESOURCE_GROUP" \
