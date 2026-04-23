@@ -9,6 +9,7 @@ env:
   ACR_LOGIN_SERVER: legalcocounselacr.azurecr.io
   API_APP_NAME: legal-cocounsel-api
   FRONTEND_APP_NAME: legal-cocounsel-frontend
+  MCP_APP_NAME: legal-cocounsel-mcp
 
 jobs:
   build-and-deploy:
@@ -52,22 +53,44 @@ jobs:
             ${{ env.ACR_LOGIN_SERVER }}/legal-cocounsel-frontend:latest
             ${{ env.ACR_LOGIN_SERVER }}/legal-cocounsel-frontend:${{ github.sha }}
 
-      # ── 5. Restart API App Service to pull new image ─────────────────────────
+      # ── 5. Build & push MCP image ────────────────────────────────────────────
+      - name: Build and push MCP image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.mcp
+          push: true
+          tags: |
+            ${{ env.ACR_LOGIN_SERVER }}/legal-cocounsel-mcp:latest
+            ${{ env.ACR_LOGIN_SERVER }}/legal-cocounsel-mcp:${{ github.sha }}
+          build-args: |
+            KAGGLE_USERNAME=${{ secrets.KAGGLE_USERNAME }}
+            KAGGLE_KEY=${{ secrets.KAGGLE_KEY }}
+
+      # ── 6. Restart API App Service to pull new image ─────────────────────────
       - name: Restart API App Service
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ env.API_APP_NAME }}
           publish-profile: ${{ secrets.AZURE_API_PUBLISH_PROFILE }}
 
-      # ── 6. Restart Frontend App Service ──────────────────────────────────────
+      # ── 7. Restart Frontend App Service ──────────────────────────────────────
       - name: Restart Frontend App Service
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ env.FRONTEND_APP_NAME }}
           publish-profile: ${{ secrets.AZURE_FRONTEND_PUBLISH_PROFILE }}
 
-      # ── 7. Print URLs ─────────────────────────────────────────────────────────
+      # ── 8. Restart MCP App Service ────────────────────────────────────────────
+      - name: Restart MCP App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.MCP_APP_NAME }}
+          publish-profile: ${{ secrets.AZURE_MCP_PUBLISH_PROFILE }}
+
+      # ── 9. Print URLs ─────────────────────────────────────────────────────────
       - name: Deployment complete
         run: |
           echo "✅ API:      https://legal-cocounsel-api.azurewebsites.net"
           echo "✅ Frontend: https://legal-cocounsel-frontend.azurewebsites.net"
+          echo "✅ MCP SSE:  https://legal-cocounsel-mcp.azurewebsites.net/sse"

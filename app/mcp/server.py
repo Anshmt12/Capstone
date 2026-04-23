@@ -1,9 +1,13 @@
-"""MCP Server exposing legal co-counsel tools for external integration."""
+"""MCP Server exposing legal co-counsel tools - stdio (local) and SSE (Azure)."""
 import json
 import logging
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
+from mcp.server.sse import SseServerTransport
 from mcp.types import Tool, TextContent
+from starlette.applications import Starlette
+from starlette.routing import Mount, Route
+from starlette.requests import Request
 from app.agents.rag_agent import RAGAgent
 from app.sql.text_to_sql import SQLAgent
 from app.agents.orchestrator import run_debate
@@ -76,10 +80,32 @@ async def call_tool(name: str, arguments: dict):
         return [TextContent(type="text", text=f"Error: {str(e)}")]
 
 
+# ─── SSE transport (for Azure deployment) ────────────────────────────────────
+
+sse = SseServerTransport("/messages/")
+
+
+async def handle_sse(request: Request):
+    async with sse.connect_sse(
+        request.scope, request.receive, request._send
+    ) as streams:
+        await server.run(streams[0], streams[1], server.create_initialization_options())
+
+
+starlette_app = Starlette(
+    routes=[
+        Route("/sse", endpoint=handle_sse),
+        Mount("/messages/", app=sse.handle_post_message),
+        Route("/health", endpoint=lambda _: __import__("starlette.responses", fromlist=["JSONResponse"]).JSONResponse({"status": "ok"})),
+    ]
+)
+
+
+# ─── stdio transport (for local Claude Desktop) ───────────────────────────────
+
 async def run_mcp_server():
-    """Run the MCP server over stdio."""
     async with stdio_server() as (read_stream, write_stream):
-        await server.run(read_stream, write_stream)
+        await server.run(read_stream, write_stream, server.create_initialization_options())
 
 
 if __name__ == "__main__":
